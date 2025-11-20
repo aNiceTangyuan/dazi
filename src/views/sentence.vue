@@ -45,13 +45,20 @@ const playAudio = () => {
 const initCharacters = () => {
   if (!currentSentence.value) return
   
-  characters.value = currentSentence.value.split('').map((char, index) => ({
+  // 将弯引号和破折号替换为键盘可输入的字符
+  const normalizedSentence = currentSentence.value
+    .replace(/[\u2018\u2019]/g, "'")     // ‘ ’ → '
+    .replace(/[\u201C\u201D]/g, '"')     // “ ” → "
+    .replace(/[\u2013\u2014\u2011]/g, '-') // – — - → -
+
+  characters.value = normalizedSentence.split('').map((char, index) => ({
     char,
     index,
     isHighlighted: false,
-    isActive: index === 0 // 第一个字符默认激活
+    isActive: index === 0
   }))
 }
+
 
 // 获取随机单词（包含句子）
 const fetchWord = async () => {

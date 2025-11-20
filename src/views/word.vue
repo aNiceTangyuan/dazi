@@ -79,7 +79,7 @@ const fetchWord = async () => {
 // 键盘按下事件处理
 const handleKeyDown = (event) => {
   // 获取按下的键（转为小写）
-  const key = event.key.toLowerCase()
+  const key = event.key
   
   // 阻止空格键的默认翻页行为
   if (key === ' ') {
