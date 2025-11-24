@@ -35,6 +35,7 @@ const currentSentenceData = computed(() => {
 // 播放发音
 const playAudio = () => {
   if (audio.value) {
+    audio.value.currentTime = 0
     audio.value.play().catch(err => {
       console.error('播放音频失败:', err)
     })
@@ -55,7 +56,8 @@ const initCharacters = () => {
     char,
     index,
     isHighlighted: false,
-    isActive: index === 0
+    isActive: index === 0,
+    isError: false
   }))
 }
 
@@ -84,6 +86,11 @@ const fetchWord = async () => {
       currentSentence.value = data.data.sentences[0].s_content
       currentIndex.value = 0
       
+      // 停止之前的音频
+      if (audio.value) {
+        audio.value.pause()
+      }
+
       // 初始化音频
       if (data.data.usspeech) {
         audio.value = new Audio(data.data.usspeech)
@@ -119,51 +126,38 @@ const nextSentence = () => {
   }
 }
 
-// 键盘按下事件处理
-const handleKeyDown = (event) => {
-  // 获取按下的键
-  const key = event.key
-  
-  // 阻止空格键的默认翻页行为
-  if (key === ' ') {
-    event.preventDefault()
-  }
-  
-  // 处理 Enter 键
-  if (key === 'Enter') {
-    // 已完成所有字符，切换下一个句子
-    if (currentIndex.value >= characters.value.length) {
-      nextSentence()
-      return
-    }
-    
-    // 未完成，检测双击 Enter
-    const now = Date.now()
-    if (now - lastEnterPress.value <= 1000) {
-      // 1秒内第二次按下 Enter
-      ElMessage.warning('跳过当前句子')
-      nextSentence()
-    } else {
-      // 第一次按下 Enter
-      ElMessage.info('再按一次 Enter 跳过当前句子')
-    }
-    lastEnterPress.value = now
-    return
-  }
-  
-  // 如果已经完成所有字符，不再处理其他按键
+// 处理 Enter 键逻辑
+const handleEnterKey = () => {
+  // 已完成所有字符，切换下一个句子
   if (currentIndex.value >= characters.value.length) {
+    nextSentence()
     return
   }
   
+  // 未完成，检测双击 Enter
+  const now = Date.now()
+  if (now - lastEnterPress.value <= 1000) {
+    // 1秒内第二次按下 Enter
+    ElMessage.warning('跳过当前句子')
+    nextSentence()
+  } else {
+    // 第一次按下 Enter
+    ElMessage.info('再按一次 Enter 跳过当前句子')
+  }
+  lastEnterPress.value = now
+}
+
+// 处理字符输入
+const handleInput = (key) => {
   // 获取当前应该输入的字符
   const currentChar = characters.value[currentIndex.value]
   
   // 判断按键是否正确（区分大小写，保留标点和空格）
   if (key === currentChar.char) {
     // 正确：高亮当前字符
-    characters.value[currentIndex.value].isHighlighted = true
-    characters.value[currentIndex.value].isActive = false
+    currentChar.isHighlighted = true
+    currentChar.isActive = false
+    currentChar.isError = false
     
     // 移动到下一个字符
     currentIndex.value++
@@ -175,7 +169,38 @@ const handleKeyDown = (event) => {
       // 完成当前句子
       ElMessage.success('完成！按 Enter 继续')
     }
+  } else {
+    // 错误：显示错误状态（忽略功能键等，只对单字符输入反馈错误）
+    if (key.length === 1) {
+      currentChar.isError = true
+      setTimeout(() => {
+        if (currentChar) currentChar.isError = false
+      }, 500)
+    }
   }
+}
+
+// 键盘按下事件处理
+const handleKeyDown = (event) => {
+  const key = event.key
+  
+  // 阻止空格键的默认翻页行为
+  if (key === ' ') {
+    event.preventDefault()
+  }
+  
+  // 处理 Enter 键
+  if (key === 'Enter') {
+    handleEnterKey()
+    return
+  }
+  
+  // 如果已经完成所有字符，不再处理其他按键
+  if (currentIndex.value >= characters.value.length) {
+    return
+  }
+  
+  handleInput(key)
 }
 
 // 重置游戏（获取新单词）
@@ -238,7 +263,8 @@ onUnmounted(() => {
             'character': true,
             'highlighted': character.isHighlighted,
             'active': character.isActive,
-            'space': character.char === ' '
+            'space': character.char === ' ',
+            'error': character.isError
           }"
         >
           {{ character.char === ' ' ? '\u00A0' : character.char }}
@@ -358,6 +384,17 @@ onUnmounted(() => {
   color: #42b883;
   transform: scale(1.05);
   text-shadow: 0 0 8px rgba(66, 184, 131, 0.5);
+}
+
+.character.error {
+  color: #f56c6c;
+  animation: shake 0.5s;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
 }
 
 @keyframes pulse {

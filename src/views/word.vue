@@ -26,6 +26,7 @@ const enterPressCount = ref(0)
 // 播放发音
 const playAudio = () => {
   if (audio.value) {
+    audio.value.currentTime = 0
     audio.value.play().catch(err => {
       console.error('播放音频失败:', err)
     })
@@ -40,7 +41,8 @@ const initLetters = () => {
     char,
     index,
     isHighlighted: false,
-    isActive: index === 0 // 第一个字母默认激活
+    isActive: index === 0, // 第一个字母默认激活
+    isError: false
   }))
 }
 
@@ -57,6 +59,11 @@ const fetchWord = async () => {
       word.value = data.data.word
       currentIndex.value = 0
       
+      // 停止之前的音频
+      if (audio.value) {
+        audio.value.pause()
+      }
+
       // 初始化音频
       if (data.data.usspeech) {
         audio.value = new Audio(data.data.usspeech)
@@ -76,54 +83,40 @@ const fetchWord = async () => {
   }
 }
 
-// 键盘按下事件处理
-const handleKeyDown = (event) => {
-  // 获取按下的键（转为小写）
-  const key = event.key
-  
-  // 阻止空格键的默认翻页行为
-  if (key === ' ') {
-    event.preventDefault()
-  }
-  
-  // 处理 Enter 键
-  if (key === 'enter') {
-    // 已完成所有字母，直接切换下一个单词
-    if (currentIndex.value >= letters.value.length) {
-      ElMessage.success('开始下一个单词！')
-      reset()
-      return
-    }
-    
-    // 未完成，检测双击 Enter
-    const now = Date.now()
-    if (now - lastEnterPress.value <= 1000) {
-      // 1秒内第二次按下 Enter
-      ElMessage.warning('跳过当前单词')
-      reset()
-      enterPressCount.value = 0
-    } else {
-      // 第一次按下 Enter
-      ElMessage.info('再按一次 Enter 跳过当前单词')
-      enterPressCount.value = 1
-    }
-    lastEnterPress.value = now
-    return
-  }
-  
-  // 如果已经完成所有字母，不再处理其他按键
+// 处理 Enter 键逻辑
+const handleEnterKey = () => {
+  // 已完成所有字母，直接切换下一个单词
   if (currentIndex.value >= letters.value.length) {
+    ElMessage.success('开始下一个单词！')
+    reset()
     return
   }
   
+  // 未完成，检测双击 Enter
+  const now = Date.now()
+  if (now - lastEnterPress.value <= 1000) {
+    // 1秒内第二次按下 Enter
+    ElMessage.warning('跳过当前单词')
+    reset()
+  } else {
+    // 第一次按下 Enter
+    ElMessage.info('再按一次 Enter 跳过当前单词')
+    enterPressCount.value = 1
+  }
+  lastEnterPress.value = now
+}
+
+// 处理字符输入
+const handleInput = (key) => {
   // 获取当前应该输入的字母
   const currentLetter = letters.value[currentIndex.value]
   
-  // 判断按键是否正确
-  if (key === currentLetter.char.toLowerCase()) {
+  // 判断按键是否正确 (忽略大小写)
+  if (key.toLowerCase() === currentLetter.char.toLowerCase()) {
     // 正确：高亮当前字母
-    letters.value[currentIndex.value].isHighlighted = true
-    letters.value[currentIndex.value].isActive = false
+    currentLetter.isHighlighted = true
+    currentLetter.isActive = false
+    currentLetter.isError = false
     
     // 移动到下一个字母
     currentIndex.value++
@@ -136,7 +129,40 @@ const handleKeyDown = (event) => {
       playAudio()
       ElMessage.success('完成！按 Enter 继续下一个单词')
     }
+  } else {
+    // 错误：显示错误状态（仅当输入的是字母时）
+    if (key.length === 1 && /[a-zA-Z]/.test(key)) {
+      currentLetter.isError = true
+      // 简短震动或错误提示动画后移除错误状态
+      setTimeout(() => {
+        if (currentLetter) currentLetter.isError = false
+      }, 500)
+    }
   }
+}
+
+// 键盘按下事件处理
+const handleKeyDown = (event) => {
+  const key = event.key
+  
+  // 阻止空格键的默认翻页行为
+  if (key === ' ') {
+    event.preventDefault()
+    return
+  }
+  
+  // 处理 Enter 键
+  if (key === 'Enter') {
+    handleEnterKey()
+    return
+  }
+  
+  // 如果已经完成所有字母或正在加载，不再处理其他按键
+  if (currentIndex.value >= letters.value.length || loading.value) {
+    return
+  }
+  
+  handleInput(key)
 }
 
 // 重置游戏（获取新单词）
@@ -181,7 +207,8 @@ onUnmounted(() => {
           :class="{
             'letter': true,
             'highlighted': letter.isHighlighted,
-            'active': letter.isActive
+            'active': letter.isActive,
+            'error': letter.isError
           }"
         >
           {{ letter.char }}
@@ -269,6 +296,17 @@ onUnmounted(() => {
   color: #42b883;
   transform: scale(1.1);
   text-shadow: 0 0 10px rgba(66, 184, 131, 0.5);
+}
+
+.letter.error {
+  color: #f56c6c;
+  animation: shake 0.5s;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
 }
 
 @keyframes pulse {
